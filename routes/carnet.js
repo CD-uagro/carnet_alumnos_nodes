@@ -189,9 +189,13 @@ router.post('/carnet/foto', authenticateToken, (req, res) => {
       });
     } catch (error) {
       console.error('❌ Error subiendo fotografía:', error);
+      const safeErrorCode = error.code || error.name || 'PHOTO_UPLOAD_FAILED';
+      const safeStatusCode = error.statusCode || error.status || 500;
       return res.status(500).json({
         success: false,
-        message: 'Error interno subiendo la fotografía'
+        message: 'Error interno subiendo la fotografía',
+        errorCode: safeErrorCode,
+        statusCode: safeStatusCode
       });
     }
   });
