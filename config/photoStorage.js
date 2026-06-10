@@ -158,9 +158,38 @@ async function deleteCarnetPhotoFromStorage(fotoUrl) {
   }
 }
 
+async function downloadCarnetPhotoFromStorage(fotoUrl) {
+  if (!fotoUrl || !isPhotoStorageConfigured()) return null;
+
+  const containerClient = getContainerClient();
+  const blobName = blobNameFromUrl(fotoUrl);
+  if (!blobName) return null;
+
+  const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+  const exists = await blockBlobClient.exists();
+  if (!exists) return null;
+
+  const response = await blockBlobClient.download(0);
+  const chunks = [];
+
+  for await (const chunk of response.readableStreamBody) {
+    chunks.push(chunk);
+  }
+
+  return {
+    buffer: Buffer.concat(chunks),
+    contentType:
+      response.contentType ||
+      response.blobHTTPHeaders?.blobContentType ||
+      'application/octet-stream',
+    contentLength: response.contentLength
+  };
+}
+
 module.exports = {
   isPhotoStorageConfigured,
   uploadCarnetPhotoToStorage,
   getCarnetPhotoReadUrl,
+  downloadCarnetPhotoFromStorage,
   deleteCarnetPhotoFromStorage,
 };

@@ -11,6 +11,7 @@ const {
   isPhotoStorageConfigured,
   uploadCarnetPhotoToStorage,
   getCarnetPhotoReadUrl,
+  downloadCarnetPhotoFromStorage,
   deleteCarnetPhotoFromStorage
 } = require('../config/photoStorage');
 
@@ -199,6 +200,47 @@ router.post('/carnet/foto', authenticateToken, (req, res) => {
       });
     }
   });
+});
+
+router.get('/carnet/foto', authenticateToken, async (req, res) => {
+  try {
+    const { matricula } = req.user;
+
+    if (!matricula) {
+      return res.status(400).json({
+        success: false,
+        message: 'Matrícula no encontrada en token'
+      });
+    }
+
+    const carnet = await findCarnetByMatricula(matricula);
+    if (!carnet || !carnet.fotoUrl) {
+      return res.status(404).json({
+        success: false,
+        message: 'Fotografía no registrada'
+      });
+    }
+
+    const photo = await downloadCarnetPhotoFromStorage(carnet.fotoUrl);
+    if (!photo) {
+      return res.status(404).json({
+        success: false,
+        message: 'Fotografía no encontrada'
+      });
+    }
+
+    res.setHeader('Content-Type', photo.contentType);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Content-Length', photo.buffer.length);
+    return res.send(photo.buffer);
+  } catch (error) {
+    console.error('❌ Error obteniendo fotografía:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error interno obteniendo la fotografía',
+      errorCode: error.code || error.name || 'PHOTO_DOWNLOAD_FAILED'
+    });
+  }
 });
 
 router.delete('/carnet/foto', authenticateToken, async (req, res) => {
