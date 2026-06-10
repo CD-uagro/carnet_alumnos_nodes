@@ -10,6 +10,7 @@ const { authenticateToken } = require('../middleware/auth');
 const {
   isPhotoStorageConfigured,
   uploadCarnetPhotoToStorage,
+  getCarnetPhotoReadUrl,
   deleteCarnetPhotoFromStorage
 } = require('../config/photoStorage');
 
@@ -58,6 +59,15 @@ const uploadPhoto = multer({
   }
 });
 
+function withSignedPhotoUrl(carnet) {
+  if (!carnet || !carnet.fotoUrl) return carnet;
+
+  return {
+    ...carnet,
+    fotoUrl: getCarnetPhotoReadUrl(carnet.fotoUrl)
+  };
+}
+
 /**
  * GET /me/carnet
  * Obtener información completa del carnet del usuario autenticado
@@ -84,7 +94,7 @@ router.get('/carnet', authenticateToken, async (req, res) => {
     }
 
     // Limpiar datos técnicos de Cosmos DB
-    const carnetLimpio = cleanCosmosDocument(carnet);
+    const carnetLimpio = withSignedPhotoUrl(cleanCosmosDocument(carnet));
 
     // Log exitoso
     console.log(`📋 Carnet solicitado para matrícula: ${matricula}`);
@@ -168,13 +178,14 @@ router.post('/carnet/foto', authenticateToken, (req, res) => {
       });
 
       const carnetActualizado = await updateCarnetFotoUrl(matricula, fotoUrl);
+      const carnetConFotoFirmada = withSignedPhotoUrl(carnetActualizado);
 
       console.log(`📸 Fotografía actualizada para matrícula: ${matricula}`);
 
       return res.json({
         success: true,
-        fotoUrl,
-        data: carnetActualizado
+        fotoUrl: carnetConFotoFirmada?.fotoUrl || null,
+        data: carnetConFotoFirmada
       });
     } catch (error) {
       console.error('❌ Error subiendo fotografía:', error);

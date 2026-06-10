@@ -1,4 +1,9 @@
-const { BlobServiceClient } = require('@azure/storage-blob');
+const {
+  BlobSASPermissions,
+  BlobServiceClient,
+  StorageSharedKeyCredential,
+  generateBlobSASQueryParameters
+} = require('@azure/storage-blob');
 
 const DEFAULT_CONTAINER = 'fotos-carnet';
 
@@ -35,6 +40,28 @@ function getContainerClient() {
   return blobServiceClient.getContainerClient(getContainerName());
 }
 
+function parseConnectionString() {
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connectionString) return null;
+
+  const parts = {};
+  for (const part of connectionString.split(';')) {
+    const separatorIndex = part.indexOf('=');
+    if (separatorIndex <= 0) continue;
+
+    const key = part.slice(0, separatorIndex);
+    const value = part.slice(separatorIndex + 1);
+    if (key && value) parts[key] = value;
+  }
+
+  if (!parts.AccountName || !parts.AccountKey) return null;
+
+  return {
+    accountName: parts.AccountName,
+    accountKey: parts.AccountKey
+  };
+}
+
 function extensionFromMime(mimeType) {
   switch (mimeType) {
     case 'image/jpeg':
@@ -54,7 +81,7 @@ function safeMatricula(matricula) {
 
 async function uploadCarnetPhotoToStorage({ matricula, buffer, mimeType }) {
   const containerClient = getContainerClient();
-  await containerClient.createIfNotExists({ access: 'blob' });
+  await containerClient.createIfNotExists();
 
   const extension = extensionFromMime(mimeType);
   const blobName = `${safeMatricula(matricula)}.${extension}`;
@@ -63,7 +90,7 @@ async function uploadCarnetPhotoToStorage({ matricula, buffer, mimeType }) {
   await blockBlobClient.uploadData(buffer, {
     blobHTTPHeaders: {
       blobContentType: mimeType,
-      blobCacheControl: 'public, max-age=3600',
+      blobCacheControl: 'private, max-age=300',
     },
     metadata: {
       matricula: safeMatricula(matricula),
@@ -71,7 +98,50 @@ async function uploadCarnetPhotoToStorage({ matricula, buffer, mimeType }) {
     },
   });
 
-  return `${blockBlobClient.url}?v=${Date.now()}`;
+  return blockBlobClient.url;
+}
+
+function blobNameFromUrl(fotoUrl) {
+  if (!fotoUrl) return null;
+
+  const url = new URL(fotoUrl);
+  const parts = url.pathname.split('/').filter(Boolean);
+  const blobName = decodeURIComponent(parts.slice(1).join('/'));
+  return blobName || null;
+}
+
+function getCarnetPhotoReadUrl(fotoUrl) {
+  if (!fotoUrl || !isPhotoStorageConfigured()) return fotoUrl;
+
+  const parsed = parseConnectionString();
+  if (!parsed) return fotoUrl;
+
+  try {
+    const blobName = blobNameFromUrl(fotoUrl);
+    if (!blobName) return fotoUrl;
+
+    const startsOn = new Date(Date.now() - 5 * 60 * 1000);
+    const expiresOn = new Date(Date.now() + 60 * 60 * 1000);
+    const credential = new StorageSharedKeyCredential(
+      parsed.accountName,
+      parsed.accountKey
+    );
+    const sas = generateBlobSASQueryParameters(
+      {
+        containerName: getContainerName(),
+        blobName,
+        permissions: BlobSASPermissions.parse('r'),
+        startsOn,
+        expiresOn
+      },
+      credential
+    ).toString();
+
+    return `${fotoUrl.split('?')[0]}?${sas}&v=${Date.now()}`;
+  } catch (error) {
+    console.warn('No se pudo generar SAS temporal para fotografia:', error.message);
+    return fotoUrl;
+  }
 }
 
 async function deleteCarnetPhotoFromStorage(fotoUrl) {
@@ -79,9 +149,7 @@ async function deleteCarnetPhotoFromStorage(fotoUrl) {
 
   try {
     const containerClient = getContainerClient();
-    const url = new URL(fotoUrl);
-    const parts = url.pathname.split('/').filter(Boolean);
-    const blobName = decodeURIComponent(parts.slice(1).join('/'));
+    const blobName = blobNameFromUrl(fotoUrl);
     if (!blobName) return;
 
     await containerClient.getBlockBlobClient(blobName).deleteIfExists();
@@ -93,5 +161,6 @@ async function deleteCarnetPhotoFromStorage(fotoUrl) {
 module.exports = {
   isPhotoStorageConfigured,
   uploadCarnetPhotoToStorage,
+  getCarnetPhotoReadUrl,
   deleteCarnetPhotoFromStorage,
 };
