@@ -154,6 +154,45 @@ async function findCarnetByMatricula(matricula) {
  * @param {string} matricula - Matrícula del usuario
  * @returns {Array} - Array de citas del usuario
  */
+async function updateCarnetFotoUrl(matricula, fotoUrl) {
+  try {
+    const carnet = await findCarnetByMatricula(matricula);
+    if (!carnet) return null;
+
+    const carnetLimpio = cleanCosmosDocument(carnet);
+    const carnetActualizado = {
+      ...carnetLimpio,
+      fotoUrl: fotoUrl || null,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (!carnetActualizado.id) {
+      throw new Error('Carnet sin id; no se puede actualizar fotoUrl');
+    }
+
+    let resource;
+    try {
+      const response = await carnetsContainer
+        .item(carnetActualizado.id, carnetActualizado.matricula)
+        .replace(carnetActualizado);
+      resource = response.resource;
+    } catch (replaceError) {
+      if (replaceError.code !== 404) throw replaceError;
+
+      const response = await carnetsContainer
+        .item(carnetActualizado.id, carnetActualizado.id)
+        .replace(carnetActualizado);
+      resource = response.resource;
+    }
+
+    console.log(`✅ fotoUrl actualizada para matrícula ${matricula}`);
+    return cleanCosmosDocument(resource);
+  } catch (error) {
+    console.error(`❌ Error actualizando fotoUrl para matrícula ${matricula}:`, error);
+    throw error;
+  }
+}
+
 async function findCitasByMatricula(matricula) {
   try {
     const querySpec = {
@@ -674,6 +713,7 @@ module.exports = {
   connectToCosmosDB,
   findCarnetByEmailAndMatricula,
   findCarnetByMatricula,
+  updateCarnetFotoUrl,
   findCitasByMatricula,
   deleteCitaById,
   findPromocionesByMatricula,

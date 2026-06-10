@@ -39,7 +39,18 @@ COSMOS_CONTAINER_CITAS=cita_id
 COSMOS_CONTAINER_PROMOCIONES=promociones_salud
 ```
 
-### 4. Verificar Variables de JWT y CORS
+### 4. Agregar Variables de Azure Blob Storage para Fotografias
+
+En **Environment** del servicio `carnet-alumnos-nodes`, agregar:
+
+```
+AZURE_STORAGE_CONNECTION_STRING=<connection_string_de_sasufotos>
+AZURE_STORAGE_CONTAINER_FOTOS=fotos-carnet
+```
+
+Importante: no guardar `AZURE_STORAGE_CONNECTION_STRING` en GitHub, logs ni capturas.
+
+### 5. Verificar Variables de JWT y CORS
 
 ```
 JWT_SECRET=<tu_jwt_secret>
