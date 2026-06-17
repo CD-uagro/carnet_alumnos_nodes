@@ -12,6 +12,7 @@ const {
   replaceAppointment
 } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
+const { sendAppointmentConfirmationEmail } = require('../services/mailService');
 
 const CANCELABLE_STATUSES = ['requested', 'confirmed', 'rescheduled'];
 
@@ -49,6 +50,24 @@ function appendHistory(appointment, fromStatus, toStatus, actor, actorRole, mess
     actor_role: actorRole,
     message: message || null,
     created_at: nowIso()
+  });
+  appointment.history = history;
+}
+
+function appendSystemNotificationHistory(appointment, event, note) {
+  const history = Array.isArray(appointment.history) ? appointment.history : [];
+  const timestamp = nowIso();
+  history.push({
+    event,
+    by: 'system',
+    at: timestamp,
+    note,
+    from: appointment.status || null,
+    to: appointment.status || 'requested',
+    actor: 'system',
+    actor_role: 'system',
+    message: note,
+    created_at: timestamp
   });
   appointment.history = history;
 }
@@ -195,7 +214,30 @@ router.post('/appointments', authenticateToken, async (req, res) => {
       reasonText || 'Solicitud creada desde Carnet Digital'
     );
 
-    const created = await createAppointment(appointment);
+    let created = await createAppointment(appointment);
+
+    try {
+      const emailResult = await sendAppointmentConfirmationEmail(created);
+      const event = emailResult.success ? 'student_email_sent' : 'student_email_failed';
+      const note = emailResult.success
+        ? 'Correo de confirmacion enviado al estudiante'
+        : `No se pudo enviar correo de confirmacion al estudiante: ${emailResult.reason || 'error SMTP'}`;
+      appendSystemNotificationHistory(created, event, note);
+      created = await replaceAppointment(created);
+    } catch (emailError) {
+      console.error('Error enviando correo de cita:', emailError.message);
+      try {
+        appendSystemNotificationHistory(
+          created,
+          'student_email_failed',
+          'No se pudo enviar correo de confirmacion al estudiante'
+        );
+        created = await replaceAppointment(created);
+      } catch (historyError) {
+        console.error('Error registrando evento de correo:', historyError.message);
+      }
+    }
+
     res.status(201).json({ success: true, message: 'Solicitud de cita recibida', data: created });
   } catch (error) {
     console.error('Error creando appointment:', error);
