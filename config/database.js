@@ -8,6 +8,7 @@ let promocionesContainer;
 let usuariosContainer;
 let notasContainer;
 let alebrijesContainer;
+let appointmentsContainer;
 
 /**
  * Inicializar conexión a Azure Cosmos DB
@@ -16,12 +17,13 @@ async function connectToCosmosDB() {
   try {
     const endpoint = process.env.COSMOS_ENDPOINT;
     const key = process.env.COSMOS_KEY;
-    const databaseName = process.env.COSMOS_DATABASE || 'SASU';
+    const databaseName = process.env.COSMOS_DATABASE_ID || process.env.COSMOS_DATABASE || 'SASU';
     const carnetsContainerName = process.env.COSMOS_CONTAINER_CARNETS || 'carnets_id';
     const citasContainerName = process.env.COSMOS_CONTAINER_CITAS || 'cita_id';
     const promocionesContainerName = process.env.COSMOS_CONTAINER_PROMOCIONES || 'promociones_salud';
     const notasContainerName = process.env.COSMOS_CONTAINER_NOTAS || 'notas';
     const alebrijesContainerName = process.env.COSMOS_CONTAINER_ALEBRIJES || 'alebrijes_estudiantes';
+    const appointmentsContainerName = process.env.COSMOS_CONTAINER_APPOINTMENTS || 'appointments';
     // Forzar el nombre correcto del contenedor (ignorar variable de entorno)
     const usuariosContainerName = 'usuarios_matricula';
 
@@ -61,6 +63,7 @@ async function connectToCosmosDB() {
     promocionesContainer = database.container(promocionesContainerName);
     notasContainer = database.container(notasContainerName);
     alebrijesContainer = database.container(alebrijesContainerName);
+    appointmentsContainer = database.container(appointmentsContainerName);
     usuariosContainer = database.container(usuariosContainerName);
 
     // Verificar que los contenedores existen
@@ -206,6 +209,87 @@ async function findCitasByMatricula(matricula) {
     return resources;
   } catch (error) {
     console.error('Error buscando citas:', error);
+    throw error;
+  }
+}
+
+async function findAppointmentsByMatricula(matricula) {
+  try {
+    const querySpec = {
+      query: 'SELECT * FROM c WHERE c.type = "appointment" AND c.student.matricula = @matricula ORDER BY c.updated_at DESC',
+      parameters: [
+        { name: '@matricula', value: String(matricula) }
+      ]
+    };
+
+    const { resources } = await appointmentsContainer.items.query(querySpec).fetchAll();
+    return resources.map(cleanCosmosDocument);
+  } catch (error) {
+    console.error('Error buscando appointments:', error);
+    throw error;
+  }
+}
+
+async function findAppointmentByIdForMatricula(appointmentId, matricula) {
+  try {
+    const querySpec = {
+      query: 'SELECT * FROM c WHERE c.id = @id AND c.type = "appointment" AND c.student.matricula = @matricula',
+      parameters: [
+        { name: '@id', value: appointmentId },
+        { name: '@matricula', value: String(matricula) }
+      ]
+    };
+
+    const { resources } = await appointmentsContainer.items.query(querySpec).fetchAll();
+    return resources.length > 0 ? cleanCosmosDocument(resources[0]) : null;
+  } catch (error) {
+    console.error('Error buscando appointment por id:', error);
+    throw error;
+  }
+}
+
+async function findActiveAppointmentByMatriculaAndArea(matricula, area) {
+  try {
+    const querySpec = {
+      query: 'SELECT * FROM c WHERE c.type = "appointment" AND c.student.matricula = @matricula AND c.area = @area AND ARRAY_CONTAINS(@active, c.status)',
+      parameters: [
+        { name: '@matricula', value: String(matricula) },
+        { name: '@area', value: area },
+        { name: '@active', value: ['requested', 'confirmed', 'rescheduled'] }
+      ]
+    };
+
+    const { resources } = await appointmentsContainer.items.query(querySpec).fetchAll();
+    return resources.length > 0 ? cleanCosmosDocument(resources[0]) : null;
+  } catch (error) {
+    console.error('Error buscando appointment activo:', error);
+    throw error;
+  }
+}
+
+async function createAppointment(appointment) {
+  try {
+    const { resource } = await appointmentsContainer.items.create(appointment);
+    return cleanCosmosDocument(resource);
+  } catch (error) {
+    console.error('Error creando appointment:', error);
+    throw error;
+  }
+}
+
+async function replaceAppointment(appointment) {
+  try {
+    const matricula = appointment && appointment.student && appointment.student.matricula;
+    if (!appointment || !appointment.id || !matricula) {
+      throw new Error('Appointment sin id o matricula');
+    }
+
+    const { resource } = await appointmentsContainer
+      .item(appointment.id, matricula)
+      .replace(appointment);
+    return cleanCosmosDocument(resource);
+  } catch (error) {
+    console.error('Error actualizando appointment:', error);
     throw error;
   }
 }
@@ -715,6 +799,11 @@ module.exports = {
   findCarnetByMatricula,
   updateCarnetFotoUrl,
   findCitasByMatricula,
+  findAppointmentsByMatricula,
+  findAppointmentByIdForMatricula,
+  findActiveAppointmentByMatriculaAndArea,
+  createAppointment,
+  replaceAppointment,
   deleteCitaById,
   findPromocionesByMatricula,
   registrarClickPromocion,
@@ -736,6 +825,7 @@ module.exports = {
   getDatabase: () => database,
   getCarnetsContainer: () => carnetsContainer,
   getCitasContainer: () => citasContainer,
+  getAppointmentsContainer: () => appointmentsContainer,
   getPromocionesContainer: () => promocionesContainer,
   getUsuariosContainer: () => usuariosContainer,
   getAlebrijesContainer: () => alebrijesContainer

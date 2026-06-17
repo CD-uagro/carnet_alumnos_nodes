@@ -7,6 +7,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const carnetRoutes = require('./routes/carnet');
 const citasRoutes = require('./routes/citas');
+const appointmentsRoutes = require('./routes/appointments');
 const promocionesRoutes = require('./routes/promociones');
 const vacunasRoutes = require('./routes/vacunas');
 const consultasRoutes = require('./routes/consultas');
@@ -36,7 +37,7 @@ const corsOptions = {
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 };
 
@@ -86,6 +87,7 @@ app.get('/health', (req, res) => {
 app.use('/auth', authRoutes);
 app.use('/me', carnetRoutes);
 app.use('/me', citasRoutes);
+app.use('/me', appointmentsRoutes);
 app.use('/me', promocionesRoutes);  // Montado en /me para coincidir con Flutter app
 app.use('/me', vacunasRoutes);  // Ruta de vacunación
 app.use('/me', consultasRoutes);  // Ruta de consultas de atención
